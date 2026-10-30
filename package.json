@@ -1,0 +1,45 @@
+{
+  "name": "kalaa",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "predev": "npm run --silent db:setup && node scripts/check-port.mjs 3000",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "vercel-build": "npm run db:migrate && next build",
+    "db:migrate": "tsx --tsconfig tsconfig.json scripts/db.ts migrate",
+    "db:status": "tsx --tsconfig tsconfig.json scripts/db.ts status",
+    "db:rollback": "tsx --tsconfig tsconfig.json scripts/db.ts rollback",
+    "db:seed": "tsx --tsconfig tsconfig.json scripts/db.ts seed",
+    "db:setup": "tsx --tsconfig tsconfig.json scripts/db.ts setup",
+    "db:reset": "tsx --tsconfig tsconfig.json scripts/db.ts reset",
+    "db:new": "tsx --tsconfig tsconfig.json scripts/db.ts new",
+    "db:import-json": "tsx --tsconfig tsconfig.json scripts/db.ts import-json",
+    "db:local": "bash scripts/local-mongo.sh",
+    "db:check": "KALAA_SCRIPT=1 NODE_OPTIONS=--conditions=react-server tsx --tsconfig tsconfig.json scripts/check-data-layer.ts"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/sortable": "10.0.0",
+    "@dnd-kit/utilities": "3.2.2",
+    "@vercel/blob": "2.8.2",
+    "@vercel/functions": "3.10.5",
+    "mongodb": "7.0.0",
+    "next": "15.5.27",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "0.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.0",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9",
+    "tsx": "4.20.6",
+    "typescript": "5.9.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
