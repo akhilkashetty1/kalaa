@@ -1,4 +1,5 @@
-import { safeLessonUrl } from "./lessons";
+import { sanitizeCustom } from "./custom";
+import { SAFE_LINK, clone, defaultsFor, sanitizeFields, type Base, type Field, type Leaf } from "./fields";
 import type { Block, Site } from "./types";
 
 // The page builder's block catalogue. Each block type declares its editable fields ONCE; that single
@@ -13,18 +14,6 @@ export const TONES = [
 ] as const;
 export type Tone = (typeof TONES)[number]["value"];
 
-type Base = { key: string; label: string; hint?: string };
-export type Leaf =
-  | (Base & { kind: "text"; max: number; default: string; placeholder?: string })
-  | (Base & { kind: "textarea"; max: number; default: string })
-  | (Base & { kind: "select"; options: readonly { value: string; label: string }[]; default: string })
-  | (Base & { kind: "toggle"; default: boolean })
-  | (Base & { kind: "link"; default: string })
-  | (Base & { kind: "image"; default: string })
-  | (Base & { kind: "date"; default: string })
-  | (Base & { kind: "number"; min: number; max: number; default: number });
-export type Field = Leaf | (Base & { kind: "list"; max: number; itemLabel: string; fields: Leaf[]; default: Record<string, unknown>[] });
-
 export type BlockDef = { label: string; icon: string; blurb: string; tone: Tone; fields: Field[] };
 
 const t = (key: string, label: string, max: number, def = "", extra: Partial<Base & { placeholder: string }> = {}): Leaf => ({ kind: "text", key, label, max, default: def, ...extra });
@@ -33,6 +22,10 @@ const sel = (key: string, label: string, options: readonly [string, string][], d
 const link = (key: string, label: string, def = ""): Leaf => ({ kind: "link", key, label, default: def });
 
 export const BLOCKS: Record<string, BlockDef> = {
+  // Built from columns of elements (lib/custom.ts), so it declares no fixed fields.
+  // The fixed part of a course page (title, lessons, reserve form). Only the course template may hold one.
+  coursecore: { label: "Course details", icon: "◧", blurb: "Each course's title, lessons and reserve form. Add sections above or below it.", tone: "base", fields: [] },
+  custom: { label: "Custom section", icon: "▦", blurb: "Your own layout: columns of text, images, buttons and more.", tone: "base", fields: [] },
   hero: {
     label: "Hero",
     icon: "◐",
@@ -179,7 +172,12 @@ export const BLOCKS: Record<string, BlockDef> = {
   },
 };
 
+export { SAFE_LINK };
+export type { Field, Leaf };
+
 export const BLOCK_TYPES = Object.keys(BLOCKS);
+/** Block types with a fixed form, offered as ready-made sections. "custom" is built from elements instead. */
+export const READY_MADE = BLOCK_TYPES.filter((t) => t !== "custom" && t !== "coursecore");
 
 /** The field definition behind a prop path such as "headline" or "items.2.title". */
 export function fieldFor(type: string, path: string): Leaf | undefined {
@@ -194,17 +192,19 @@ export function getPath(props: Record<string, unknown>, path: string): unknown {
   return path.split(".").reduce<unknown>((o, k) => (o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined), props);
 }
 
-/** Returns a copy of `props` with the value at `path` replaced. */
+/** Returns a copy of `props` with the value at `path` replaced. Paths reach through objects and arrays at any depth: "cols.0.2.props.text". */
 export function setPath(props: Record<string, unknown>, path: string, value: unknown): Record<string, unknown> {
-  const [head, ...rest] = path.split(".");
-  if (rest.length === 0) return { ...props, [head]: value };
-  const child = props[head];
-  if (Array.isArray(child)) {
-    const [idx, ...tail] = rest;
-    const i = Number(idx);
-    return { ...props, [head]: child.map((item, n) => (n === i ? (tail.length ? setPath(item as Record<string, unknown>, tail.join("."), value) : value) : item)) };
-  }
-  return { ...props, [head]: setPath((child as Record<string, unknown>) ?? {}, rest.join("."), value) };
+  const set = (node: unknown, keys: string[]): unknown => {
+    if (keys.length === 0) return value;
+    const [k, ...rest] = keys;
+    if (Array.isArray(node)) {
+      const i = Number(k);
+      return node.map((item, n) => (n === i ? set(item, rest) : item));
+    }
+    const obj = (node && typeof node === "object" ? node : {}) as Record<string, unknown>;
+    return { ...obj, [k]: set(obj[k], rest) };
+  };
+  return set(props, path.split(".")) as Record<string, unknown>;
 }
 
 // ---------- ids, defaults ----------
@@ -212,13 +212,9 @@ export function setPath(props: Record<string, unknown>, path: string, value: unk
 const ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 export const newBlockId = () => "bk_" + Array.from({ length: 8 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join("");
 
-function clone<T>(v: T): T {
-  return JSON.parse(JSON.stringify(v)) as T;
-}
 
 export function defaultProps(type: string): Record<string, unknown> {
-  const def = BLOCKS[type];
-  return Object.fromEntries((def?.fields ?? []).map((f) => [f.key, clone(f.default)]));
+  return defaultsFor(BLOCKS[type]?.fields ?? []);
 }
 
 export function newBlock(type: string, props: Record<string, unknown> = {}, extra: Partial<Block> = {}): Block {
@@ -228,67 +224,24 @@ export function newBlock(type: string, props: Record<string, unknown> = {}, extr
 // ---------- validation ----------
 
 const MAX_BLOCKS = 40;
-const SAFE_LINK = /^(#[\w-]{0,40}|\/(?!\/)[\w\-./?=&#%]{0,200}|https:\/\/[^\s<>"']{1,280})$/;
-
-const str = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").slice(0, max) : "");
-
-function leaf(f: Leaf, v: unknown): string | number | boolean {
-  switch (f.kind) {
-    case "text":
-      return str(v, f.max).replace(/\s*\n+\s*/g, " ").trim();
-    case "textarea":
-      return str(v, f.max).trim();
-    case "select":
-      return f.options.some((o) => o.value === v) ? (v as string) : f.default;
-    case "toggle":
-      return v === true;
-    case "link": {
-      const s = str(v, 300).trim();
-      return s === "" || SAFE_LINK.test(s) ? s : "";
-    }
-    case "image":
-      return (typeof v === "string" && safeLessonUrl(v.trim())) || "";
-    case "date":
-      return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : f.default;
-    case "number": {
-      const n = Math.round(Number(v));
-      return Number.isFinite(n) ? Math.min(f.max, Math.max(f.min, n)) : f.default;
-    }
-  }
-}
-
 export function sanitizeProps(type: string, input: unknown): Record<string, unknown> {
-  const src = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const f of BLOCKS[type].fields) {
-    const v = src[f.key];
-    if (f.kind === "list") {
-      const arr = Array.isArray(v) ? v.slice(0, f.max) : clone(f.default);
-      out[f.key] = arr.map((item) => {
-        const o = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
-        return Object.fromEntries(f.fields.map((lf) => [lf.key, leaf(lf, o[lf.key])]));
-      });
-    } else {
-      out[f.key] = v === undefined ? clone(f.default) : leaf(f, v);
-    }
-  }
-  return out;
+  return sanitizeFields(BLOCKS[type].fields, input);
 }
 
 /** Validates a page from the editor. Unknown block types and fields are dropped, so stored pages are always renderable. */
-export function sanitizeBlocks(input: unknown): Block[] {
+export function sanitizeBlocks(input: unknown, opts: { core?: boolean } = {}): Block[] {
   if (!Array.isArray(input)) return [];
   const seen = new Set<string>();
   const out: Block[] = [];
   for (const raw of input.slice(0, MAX_BLOCKS)) {
     const b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
     const type = typeof b.type === "string" ? b.type : "";
-    if (!BLOCKS[type]) continue;
+    if (!BLOCKS[type] || (type === "coursecore" && !opts.core)) continue;
     let id = typeof b.id === "string" && /^[a-z0-9_-]{4,40}$/i.test(b.id) ? b.id : newBlockId();
     while (seen.has(id)) id = newBlockId();
     seen.add(id);
     const tone = TONES.some((x) => x.value === b.tone) ? (b.tone as Tone) : BLOCKS[type].tone;
-    out.push({ id, type, tone, ...(b.hidden === true ? { hidden: true } : {}), props: sanitizeProps(type, b.props) });
+    out.push({ id, type, tone, ...(b.hidden === true ? { hidden: true } : {}), props: type === "custom" ? (sanitizeCustom(b.props) as unknown as Record<string, unknown>) : sanitizeProps(type, b.props) });
   }
   return out;
 }

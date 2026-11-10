@@ -18,7 +18,7 @@ function slugify(s: string) {
   return s.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "course";
 }
 
-export type CourseFields = { title: string; summary: string; priceInr: number; mrpInr?: number; tag?: string; lessons: Lesson[] };
+export type CourseFields = { title: string; summary: string; priceInr: number; mrpInr?: number; tag?: string; seats?: number; lessons: Lesson[] };
 
 /** Picks the first free slug; the unique index settles a race between two courses with the same title. */
 export async function createCourse(siteId: string, input: CourseFields) {
@@ -71,12 +71,13 @@ export async function updateCourse(siteId: string, courseId: string, fields: Cou
     const { c, session } = tx;
     const before = await c.courses.findOne({ _id: courseId, siteId }, { session, projection: { lessons: 1 } });
     if (!before) return { ok: false, removed: [] };
-    const unset: Partial<Record<"mrpInr" | "tag", "">> = {};
+    const unset: Partial<Record<"mrpInr" | "tag" | "seats", "">> = {};
     if (fields.mrpInr === undefined) unset.mrpInr = "";
     if (fields.tag === undefined) unset.tag = "";
+    if (fields.seats === undefined) unset.seats = "";
     await c.courses.updateOne(
       { _id: courseId, siteId },
-      { $set: { title: fields.title, summary: fields.summary, priceInr: fields.priceInr, lessons: fields.lessons, mrpInr: fields.mrpInr, tag: fields.tag }, ...(Object.keys(unset).length ? { $unset: unset } : {}) },
+      { $set: { title: fields.title, summary: fields.summary, priceInr: fields.priceInr, lessons: fields.lessons, mrpInr: fields.mrpInr, tag: fields.tag, seats: fields.seats }, ...(Object.keys(unset).length ? { $unset: unset } : {}) },
       { session },
     );
     return { ok: true, removed: await releaseFiles(tx, siteId, fileIdsOf(before.lessons)) };

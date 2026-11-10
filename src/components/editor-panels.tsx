@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { BLOCKS, BLOCK_TYPES, TONES, type Field, type Leaf } from "@/lib/blocks";
+import { BLOCKS, READY_MADE, TONES, type Field, type Leaf } from "@/lib/blocks";
 import { TEMPLATES, type TemplateId } from "@/lib/templates";
 import { ACCENTS, AMBIENTS, FONTS, LOOKS, MOTIONS, PRESETS, paletteOf, type FontKey, type PresetKey, type Theme } from "@/lib/theme";
 import type { Block } from "@/lib/types";
+import { ImageField } from "./media-library";
+import { AiDraft } from "./ai-draft";
+import { BuildYourOwn } from "./my-sections";
+import type { CustomProps } from "@/lib/custom";
 
 // The editor's side panels. The block inspector is generated from the same field declarations
 // that the server validates against (lib/blocks.ts), so a new block type needs no new form code.
@@ -21,7 +25,7 @@ export function Seg<T extends string>({ value, options, onChange, label }: { val
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="field">
       <label>{label}</label>
@@ -31,7 +35,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   );
 }
 
-function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <div className="tog">
       {label}
@@ -63,7 +67,7 @@ function LeafInput({ f, value, onChange, id }: { f: Leaf; value: unknown; onChan
         </>
       );
     case "image":
-      return <input className="input" id={id} value={String(value ?? "")} placeholder="https://…/photo.jpg" onChange={(e) => onChange(e.target.value)} />;
+      return <ImageField id={id} value={String(value ?? "")} onChange={onChange} />;
     case "date":
       return <input className="input" id={id} type="date" value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />;
     case "number":
@@ -71,7 +75,7 @@ function LeafInput({ f, value, onChange, id }: { f: Leaf; value: unknown; onChan
   }
 }
 
-function FieldRow({ f, value, onChange, id }: { f: Leaf; value: unknown; onChange: (v: unknown) => void; id: string }) {
+export function FieldRow({ f, value, onChange, id }: { f: Leaf; value: unknown; onChange: (v: unknown) => void; id: string }) {
   if (f.kind === "toggle") return <LeafInput f={f} value={value} onChange={onChange} id={id} />;
   return (
     <Row label={f.label} hint={f.hint}>
@@ -80,7 +84,7 @@ function FieldRow({ f, value, onChange, id }: { f: Leaf; value: unknown; onChang
   );
 }
 
-function ListEditor({ f, items, onChange, idPrefix }: { f: Extract<Field, { kind: "list" }>; items: Record<string, unknown>[]; onChange: (items: Record<string, unknown>[]) => void; idPrefix: string }) {
+export function ListEditor({ f, items, onChange, idPrefix }: { f: Extract<Field, { kind: "list" }>; items: Record<string, unknown>[]; onChange: (items: Record<string, unknown>[]) => void; idPrefix: string }) {
   const move = (i: number, d: number) => {
     const j = i + d;
     if (j < 0 || j >= items.length) return;
@@ -128,9 +132,6 @@ export function BlockInspector({ block, onProp, onTone, onDuplicate, onRemove, o
       <Row label="Section colour" hint="Alternate tones to give the page rhythm.">
         <Seg label="Tone" value={block.tone ?? def.tone} options={TONES} onChange={onTone} />
       </Row>
-      <datalist id="link-targets">
-        {["#courses", "#live", "#stories", "#about", "#faq", "/login", "/my-courses"].map((l) => <option key={l} value={l} />)}
-      </datalist>
       {def.fields.map((f) =>
         f.kind === "list" ? (
           <ListEditor key={f.key} f={f} idPrefix={`${block.id}-${f.key}`} items={(block.props[f.key] as Record<string, unknown>[]) ?? []} onChange={(items) => onProp(f.key, items)} />
@@ -145,7 +146,7 @@ export function BlockInspector({ block, onProp, onTone, onDuplicate, onRemove, o
 
 // ---------- design ----------
 
-function ColorDot({ value, label, onChange }: { value: string; label: string; onChange: (v: string) => void }) {
+export function ColorDot({ value, label, onChange }: { value: string; label: string; onChange: (v: string) => void }) {
   return (
     <label className="cdot" title={label}>
       <input type="color" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} />
@@ -255,13 +256,16 @@ export function DesignPanel({ theme, onTheme }: { theme: Theme; onTheme: (patch:
 
 // ---------- add ----------
 
-export function AddPanel({ where, onAdd, onTemplate }: { where: string; onAdd: (type: string) => void; onTemplate: (id: TemplateId, withLook: boolean) => void }) {
+export function AddPanel({ where, slug, canTemplate, ai, savedTick, onAdd, onAddCustom, onTemplate }: { where: string; slug: string; canTemplate: boolean; ai?: (description: string, language: "en" | "hi") => Promise<string | null>; savedTick: number; onAdd: (type: string) => void; onAddCustom: (props: CustomProps) => void; onTemplate: (id: TemplateId, withLook: boolean) => void }) {
   const [confirm, setConfirm] = useState<TemplateId | null>(null);
   return (
     <div className="insp">
       <p className="hint add-where">{where}</p>
+      {ai && <AiDraft onGenerate={ai} />}
+      <BuildYourOwn slug={slug} onAdd={onAddCustom} refreshKey={savedTick} />
+      <section className="dsec"><h4>Ready-made sections <span>fill in the blanks</span></h4></section>
       <div className="lib">
-        {BLOCK_TYPES.map((type) => (
+        {READY_MADE.map((type) => (
           <button key={type} type="button" className="lib-card" onClick={() => onAdd(type)}>
             <span className="lib-ico">{BLOCKS[type].icon}</span>
             <b>{BLOCKS[type].label}</b>
@@ -269,6 +273,7 @@ export function AddPanel({ where, onAdd, onTemplate }: { where: string; onAdd: (
           </button>
         ))}
       </div>
+      {canTemplate && (
       <section className="dsec">
         <h4>Start from a template <span>replaces the page</span></h4>
         <div className="tpls">
@@ -289,6 +294,7 @@ export function AddPanel({ where, onAdd, onTemplate }: { where: string; onAdd: (
         </div>
         <span className="hint">You can undo a template with ⌘Z.</span>
       </section>
+      )}
     </div>
   );
 }

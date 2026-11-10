@@ -14,6 +14,7 @@ import type { Permission } from "@/lib/roles";
 import { sanitizeTheme } from "@/lib/theme";
 import { siteOrigin } from "@/server/tenant";
 import { sanitizeBlocks } from "@/lib/blocks";
+import { PublishError, applySnapshot, buildSnapshot, cancelSchedule, scheduleSnapshot } from "@/server/publish";
 import { isTemplateId } from "@/lib/templates";
 import type { BrandDraft, SiteDraft } from "@/lib/types";
 
@@ -72,18 +73,45 @@ export async function saveBrand(slug: string, draft: BrandDraft): Promise<FormSt
 
 /** Publishes the visual editor's page and design. Everything is validated again here: the browser is not trusted. */
 export async function publishSite(slug: string, draft: SiteDraft): Promise<FormState> {
+  let ctx;
   try {
-    await siteFor(slug, "brand.manage");
+    ctx = await assertSiteAccess(slug, "brand.manage");
   } catch (err) {
     return denied(err);
   }
-  const name = String(draft?.name ?? "").trim().slice(0, 60);
-  if (!name) return { error: "Your site needs a name." };
-  const blocks = sanitizeBlocks(draft?.blocks);
-  if (!blocks.some((b) => !b.hidden)) return { error: "Keep at least one visible section on the page." };
-  await repo.saveSite(slug, { name, theme: sanitizeTheme(draft?.theme), blocks });
-  revalidatePath(`/studio/${slug}`, "layout");
+  try {
+    await applySnapshot(ctx.site, await buildSnapshot(ctx.site, draft), ctx.creator.email);
+  } catch (err) {
+    if (err instanceof PublishError) return { error: err.message };
+    throw err;
+  }
   return { ok: "Published" };
+}
+
+/** Holds the editor's draft to be published at `at` (an ISO time). The draft is validated now, so a later publish can't surprise anyone. */
+export async function schedulePublish(slug: string, draft: SiteDraft, at: string): Promise<FormState> {
+  let ctx;
+  try {
+    ctx = await assertSiteAccess(slug, "brand.manage");
+  } catch (err) {
+    return denied(err);
+  }
+  try {
+    await scheduleSnapshot(ctx.site, await buildSnapshot(ctx.site, draft), new Date(at), ctx.creator.email);
+  } catch (err) {
+    if (err instanceof PublishError) return { error: err.message };
+    throw err;
+  }
+  return { ok: "Scheduled" };
+}
+
+export async function cancelScheduledPublish(slug: string, id: string): Promise<FormState> {
+  try {
+    const { site } = await assertSiteAccess(slug, "brand.manage");
+    return (await cancelSchedule(site.id, id)) ? { ok: "Cancelled" } : { error: "That schedule no longer exists." };
+  } catch (err) {
+    return denied(err);
+  }
 }
 
 const num = (v: FormDataEntryValue | null) => Math.round(Number(v));
@@ -96,6 +124,8 @@ async function readCourse(formData: FormData, siteId: string): Promise<{ fields:
   const mrpRaw = String(formData.get("mrp") ?? "").trim();
   const mrpInr = mrpRaw ? num(mrpRaw) : undefined;
   const tag = String(formData.get("tag") ?? "").trim().slice(0, 24) || undefined;
+  const seatsRaw = String(formData.get("seats") ?? "").trim();
+  const seats = seatsRaw ? num(seatsRaw) : undefined;
   // The lesson editor sends JSON. Plain "title | minutes | free | link" lines are still understood.
   const rawLessons = String(formData.get("lessons") ?? "");
   let json: unknown;
@@ -105,9 +135,10 @@ async function readCourse(formData: FormData, siteId: string): Promise<{ fields:
   if (!title) return { error: "Add a course title." };
   if (!Number.isFinite(priceInr) || priceInr < 0 || priceInr > 1_000_000) return { error: "Enter a price between ₹0 and ₹10,00,000." };
   if (mrpInr !== undefined && (!Number.isFinite(mrpInr) || mrpInr < priceInr)) return { error: "The original price should be higher than the selling price." };
+  if (seats !== undefined && (!Number.isFinite(seats) || seats < 1 || seats > 10_000)) return { error: "Seats should be a number between 1 and 10,000, or left empty." };
   if ("error" in parsed) return { error: parsed.error };
   if (!parsed.lessons.length) return { error: "Add at least one lesson." };
-  return { fields: { title, summary, priceInr, mrpInr, tag, lessons: parsed.lessons } };
+  return { fields: { title, summary, priceInr, mrpInr, tag, seats, lessons: parsed.lessons } };
 }
 
 export async function createCourse(slug: string, _: FormState, formData: FormData): Promise<FormState> {

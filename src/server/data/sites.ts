@@ -103,7 +103,7 @@ export async function saveBrand(slug: string, draft: BrandDraft) {
 
 /** Publishes what the visual editor sends. Keeps the site's headline and intro in step with the first hero, for link previews. */
 export async function saveSite(slug: string, draft: SiteDraft) {
-  const set: Partial<Site> = { name: draft.name, theme: draft.theme, blocks: draft.blocks };
+  const set: Partial<Site> = { name: draft.name, theme: draft.theme, blocks: draft.blocks, chrome: draft.chrome, pages: draft.pages, courseTemplate: draft.courseTemplate };
   const hero = draft.blocks.find((b) => b.type === "hero" && !b.hidden);
   if (hero) {
     if (typeof hero.props.headline === "string" && hero.props.headline) set.headline = hero.props.headline;

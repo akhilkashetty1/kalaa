@@ -10,6 +10,7 @@ export function CourseFields({ course, slug }: { course?: Course; slug: string }
       <div className="field"><label htmlFor="price">Price (₹)</label><input className="input" id="price" name="price" type="number" min={0} step={1} placeholder="2499" defaultValue={course?.priceInr} required /></div>
       <div className="field"><label htmlFor="mrp">Original price (₹, optional)</label><input className="input" id="mrp" name="mrp" type="number" min={0} step={1} placeholder="3999" defaultValue={course?.mrpInr} /></div>
       <div className="field"><label htmlFor="tag">Badge (optional)</label><input className="input" id="tag" name="tag" placeholder="New" maxLength={24} defaultValue={course?.tag} /></div>
+      <div className="field"><label htmlFor="seats">Seats (optional)</label><input className="input" id="seats" name="seats" type="number" min={1} max={10000} step={1} placeholder="30" defaultValue={course?.seats} /><span className="hint">Shows “seats left” on your site, counting every reservation.</span></div>
       <div className="field full">
         <label>Lessons</label>
         <LessonEditor slug={slug} initial={course?.lessons ?? []} />

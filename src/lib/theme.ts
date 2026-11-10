@@ -91,7 +91,7 @@ export const LOOKS: Record<string, { name: string; blurb: string; theme: Partial
 };
 
 const HEX = /^#[0-9a-f]{6}$/i;
-const hex = (v: unknown) => (typeof v === "string" && HEX.test(v) ? v.toLowerCase() : undefined);
+export const hex = (v: unknown) => (typeof v === "string" && HEX.test(v) ? v.toLowerCase() : undefined);
 
 /** Accepts untrusted input (from the editor) and returns a valid theme. */
 export function sanitizeTheme(input: unknown): Theme {

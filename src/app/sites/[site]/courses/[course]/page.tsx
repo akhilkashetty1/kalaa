@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { inr, t } from "@/lib/i18n";
 import { currentLearner } from "@/server/learner-auth";
-import { getCourse, learnerAccess } from "@/server/data";
+import { getCourse, learnerAccess, loadPublicData } from "@/server/data";
+import { PageBlocks } from "@/components/blocks";
+import { CourseScope } from "@/components/site-context";
+import { splitTemplate } from "@/lib/pages";
 import { siteFromParam } from "@/server/tenant";
 import { PayPanel } from "@/components/pay-panel";
 import { ReserveForm } from "@/components/reserve-form";
@@ -31,8 +34,13 @@ export default async function CoursePage({ params }: Props) {
   const state = access?.paid.has(course.id) ? "paid" : access?.pending.has(course.id) ? "pending" : "open";
   const pay = site.upiId ? { upiId: site.upiId, note: site.payNote, payee: site.name, amount: course.priceInr, course: course.title } : undefined;
   const minutes = course.lessons.reduce((n, l) => n + l.minutes, 0);
+  // The teacher's course template: their own sections above and below the fixed course details.
+  const { before, after } = splitTemplate(site.courseTemplate);
+  const shown = (await loadPublicData(site.id)).courses.find((c) => c.slug === course.slug);
 
   return (
+    <CourseScope course={shown ?? null}>
+    <PageBlocks blocks={before} />
     <main className="cp">
       <div>
         <a className="crumb" href="/#courses">← {s.back}</a>
@@ -80,5 +88,7 @@ export default async function CoursePage({ params }: Props) {
         )}
       </aside>
     </main>
+    <PageBlocks blocks={after} />
+    </CourseScope>
   );
 }

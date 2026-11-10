@@ -67,6 +67,8 @@ Any other email creates a new creator account.
 | `npm run db:new <name>` | Creates the next migration file |
 | `npm run db:import-json` | Copies the old `.data/db.json` into MongoDB (safe to repeat) |
 | `npm run db:check` | Concurrency tests of the data layer, against a dev database |
+| `npm run check:sections` | Tests of the page-builder model (no database needed) |
+| `npm run check:ai` | Tests of the AI draft path against a local stand-in API |
 
 **Changing the data model:** write a migration, never edit a shipped one, and keep it compatible with the previous release (the old deployment keeps serving while the new one builds). Add fields and indexes first; remove old ones in a later release. `npm run db:new add_course_tags`, add it to `migrations/index.ts`, `npm run db:migrate`.
 
@@ -103,6 +105,22 @@ Rolling back a bad release: promote the previous deployment in Vercel. Because m
 ## Page builder and site editor
 
 Open `/editor/<slug>` (the studio's "Site editor" link). The page is a list of blocks (`src/lib/blocks.ts` declares each block's fields once; the inspector forms and server-side validation both come from that). Drag sections on the canvas or in Layers, click text to edit it in place (⌘I sets accent words), change looks, colours, fonts, motion and backdrop in Design, and publish. Undo/redo (⌘Z), draft recovery and device previews are built in. The hero orb and aurora are raw WebGL shaders (`src/components/shaders.tsx`). Learners get lesson progress (mark complete, resume, studio progress column).
+
+### Brand kit, media library and custom sections
+
+- **Media library** (editor → Media): upload PNG, JPG, WebP, GIF or SVG (8 MB each, 300 MB per site). Files are checked by their real contents; SVGs with scripts are refused. Images are public, served at `/api/media/<id>`, and an image on the published site can't be deleted. Code: `src/server/media.ts`.
+- **Site tab** (editor → right panel): logo (and a dark-background variant), favicon, share image, colour suggestions drawn from the logo, header menu (automatic or your own links) and main button, announcement bar, footer links and socials. Code: `src/lib/chrome.ts`, `src/components/site-settings.tsx`.
+- **Custom sections** (editor → Add → Build your own): a row of 1–4 columns holding elements: heading, text, image, button, video, embed (Google Maps/Forms, Calendly, Tally), list, divider, space, countdown, icon + text, WhatsApp button. Each section has width, spacing, alignment, a colour/gradient/image background, light or dark text, and per-device visibility. Click text on the page to edit it in place. Save a section as **My sections** to insert copies later. The model and its validator are `src/lib/custom.ts`; nothing in it accepts raw HTML or CSS.
+- **Pages:** the page menu in the editor's top bar switches between Home, any number of extra pages (up to 12, each at `/<address>` with its own title and search description, optionally in the header menu) and **Course pages**. Fixed addresses (`login`, `courses`, ...) are reserved. Code: `src/lib/pages.ts`, `src/app/sites/[site]/[page]`.
+- **Course pages template:** one design for every course. A locked "Course details" block (title, lessons, reserve form) holds its place; sections added above or below it appear on every course page, where "Course facts" shows whichever course is open.
+- **Elements bound to real data:** *Course cards* (published courses, filter by badge), *Course facts* and *Live number* (students enrolled, courses, lessons, hours; hidden until above zero). A course can have a **seat limit**; "seats left" counts every reservation, paid or not. Code: `src/server/data/public.ts`.
+- **What visitors may see of a course:** the storefront's client components only ever receive `PublicCourse` (`src/lib/types.ts`): no lesson links, no files. Locked lessons stay locked in the page source.
+- **Contact forms and leads:** add a *Contact form* element (Add → Build your own → Contact form). Visitors' answers go to **Studio → Leads** (status, search, CSV for owners and co-owners) and are emailed to the owner and co-owners. What a form asks is read from the *published* site, never from the browser. Spam control: a hidden field, a minimum fill-in time, and limits per address (8/hour), per email (3/day) and per site (300/hour). Code: `src/server/leads.ts`, `src/app/sites/[site]/lead-actions.ts`.
+- **Pop-up, announcement bar and tracking** (editor → Site tab): a pop-up that appears after a few seconds (once, daily or every visit, remembered in the browser, never on sign-in or lesson pages), and Google Analytics / Meta Pixel IDs. Only a validated ID is ever placed on the page; no free-form scripts. A cookie notice, where the law requires one, is the site owner's job.
+- **History and scheduled publishing** (editor top bar → *History* and *Schedule*): every publish is kept (the last 30). *Restore* loads an old version as an unpublished draft (⌘Z undoes it). *Schedule* holds the current draft to go live at a set time. Scheduled publishes are applied by `/api/cron/publish` (Vercel Cron, every 5 minutes; set `CRON_SECRET`) and also whenever a teammate opens the editor. On Vercel's Hobby plan crons run at most once a day. Code: `src/server/publish.ts`.
+- **AI first draft** (editor → Add → *Write my page with AI*, shown only when `ANTHROPIC_API_KEY` is set): the teacher describes their teaching; Claude (`claude-opus-5-5`, override with `ANTHROPIC_MODEL`) writes only words, as strict JSON, which are validated and merged into the sections the page already has. It is told never to invent results or numbers. Limited to 6 drafts per site per hour. Code: `src/server/ai.ts`, `src/lib/ai-copy.ts`.
+- `npm run check:ai` tests the AI path against a local stand-in for the API (no key, no cost).
+- `npm run check:sections` runs the model's checks (hostile input, limits, layouts, pages, templates, public course shape) with no database.
 
 ## Templates, home page and demo accounts
 

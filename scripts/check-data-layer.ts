@@ -71,6 +71,68 @@ async function main() {
   const late = await Promise.allSettled([inviteMember({ siteId: winner._id, actorId: helper, email: "late@example.com", role: "editor" })]);
   check("Team: a removed member can't invite anyone", late[0].status === "rejected");
 
+  // Leads: the form's settings come from the published site; bots, bad input and floods are refused.
+  const { submitLead, LeadError } = await import("@/server/leads");
+  const { emptyCustom, newEl } = await import("@/lib/custom");
+  const form = newEl("form", { consent: "I agree to be contacted", phoneRequired: true, questions: [{ label: "Exam", required: true }] });
+  const fakeSite = { id: randomUUID(), ownerId: randomUUID(), blocks: [{ id: "bk_formtest", type: "custom", props: { ...emptyCustom("1"), cols: [[form]] } }] } as never;
+  const good = { formId: form.id, values: { name: "Asha", email: `lead-${randomUUID()}@example.com`, phone: "98765 43210", answers: { "0": "JEE" } }, consent: true, hp: "", elapsed: 5000, path: "/" };
+  const lead = (extra: Record<string, unknown> = {}, ip = randomUUID()) => submitLead(fakeSite, { ...good, ...extra, values: { ...good.values, email: `lead-${randomUUID()}@example.com`, ...((extra.values as object) ?? {}) } } as never, ip);
+  const refused = async (extra: Record<string, unknown>) => lead(extra).then(() => false, (e) => e instanceof LeadError);
+  const count = () => c.leads.countDocuments({ siteId: (fakeSite as { id: string }).id });
+  await lead();
+  check("Leads: a valid submission is stored (phone cleaned)", (await count()) === 1 && (await c.leads.findOne({ siteId: (fakeSite as { id: string }).id }))!.phone === "9876543210");
+  const before = await count();
+  await lead({ hp: "http://spam.example" });
+  await lead({ elapsed: 200 });
+  check("Leads: a filled honeypot or an instant submit is dropped quietly", (await count()) === before);
+  check("Leads: unknown form id is refused", await refused({ formId: "el_nope" }));
+  check("Leads: missing name / bad email / missing required phone are refused", (await refused({ values: { name: "" } })) && (await refused({ values: { email: "not-an-email" } })) && (await refused({ values: { phone: "" } })));
+  check("Leads: unticked consent and unanswered required question are refused", (await refused({ consent: false })) && (await refused({ values: { answers: {} } })));
+  const sameEmail = `flood-${randomUUID()}@example.com`;
+  const sends = [] as boolean[];
+  for (let i = 0; i < 4; i++) sends.push(await submitLead(fakeSite, { ...good, values: { ...good.values, email: sameEmail } } as never, randomUUID()).then(() => true, () => false));
+  check("Leads: one email can submit 3 times a day", sends.join() === "true,true,true,false", sends.join());
+  const oneIp = randomUUID();
+  const ipSends = [] as boolean[];
+  for (let i = 0; i < 9; i++) ipSends.push(await lead({}, oneIp).then(() => true, () => false));
+  check("Leads: one address can submit 8 times an hour", ipSends.filter(Boolean).length === 8 && ipSends[8] === false, ipSends.filter(Boolean).length + " ok");
+  await c.leads.deleteMany({ siteId: (fakeSite as { id: string }).id });
+
+  // Publishing: drafts are validated, versions are kept, scheduled publishes run once and only when due.
+  const pub = await import("@/server/publish");
+  const { newBlock } = await import("@/lib/blocks");
+  const pubOwner = randomUUID();
+  await c.creators.insertOne({ _id: pubOwner, email: `pub-${pubOwner}@example.com`, name: "Pub", createdAt: new Date().toISOString() });
+  const psite = await createSite({ ownerId: pubOwner, slug: `pub-${randomUUID().slice(0, 8)}`, name: "Pub", creatorName: "Pub", template: "exam" });
+  const draft = (over: Record<string, unknown> = {}) => ({ name: "Pub site", theme: psite.theme, blocks: [newBlock("hero")], chrome: {}, pages: [], courseTemplate: [], ...over });
+  const rejects = (fn: () => Promise<unknown>) => fn().then(() => false, (e) => e instanceof pub.PublishError);
+  check("Publish: a draft with no name or no visible section is refused", (await rejects(() => pub.buildSnapshot(psite, draft({ name: "  " })))) && (await rejects(() => pub.buildSnapshot(psite, draft({ blocks: [{ ...newBlock("hero"), hidden: true }] })))));
+  const foreign = `/api/media/${randomUUID()}`;
+  const built = await pub.buildSnapshot(psite, draft({ blocks: [newBlock("about", { imageUrl: foreign })] }));
+  check("Publish: another site's library image is stripped", (built.blocks[0].props as Record<string, unknown>).imageUrl === "");
+
+  for (let i = 0; i < 33; i++) await pub.applySnapshot(psite, await pub.buildSnapshot(psite, draft({ name: `v${i}` })), "t@example.com");
+  const versions = await pub.listVersions(psite.id);
+  check("Versions: only the newest 30 are kept, newest first", versions.length === 30 && (await pub.getVersion(psite.id, versions[0].id))!.snapshot.name === "v32", String(versions.length));
+
+  const later = (mins: number) => new Date(Date.now() + mins * 60000);
+  const snap = await pub.buildSnapshot(psite, draft({ name: "Scheduled name" }));
+  check("Schedule: a past time and a time over 90 days away are refused", (await rejects(() => pub.scheduleSnapshot(psite, snap, later(-5), "t"))) && (await rejects(() => pub.scheduleSnapshot(psite, snap, later(60 * 24 * 100), "t"))));
+  const schedIds = [] as string[];
+  for (let i = 0; i < 5; i++) schedIds.push(await pub.scheduleSnapshot(psite, snap, later(60 + i), "t"));
+  check("Schedule: at most 5 pending at a time", await rejects(() => pub.scheduleSnapshot(psite, snap, later(90), "t")));
+  check("Schedule: nothing is published before its time", (await pub.applyDueSchedules(psite.id)) === 0 && (await c.sites.findOne({ _id: psite.id }))!.name !== "Scheduled name");
+  check("Schedule: a pending one can be cancelled once", (await pub.cancelSchedule(psite.id, schedIds[4])) === true && (await pub.cancelSchedule(psite.id, schedIds[4])) === false);
+  await c.scheduledPublishes.updateMany({ siteId: psite.id }, { $set: { at: new Date(Date.now() - 60000).toISOString() } });
+  const runs = await Promise.all([pub.applyDueSchedules(psite.id), pub.applyDueSchedules(psite.id), pub.applyDueSchedules(psite.id)]);
+  check("Schedule: parallel runs publish each due item exactly once", runs.reduce((a, b) => a + b, 0) === 4, runs.join("+"));
+  check("Schedule: published items are cleared and recorded as versions", (await c.scheduledPublishes.countDocuments({ siteId: psite.id })) === 0 && (await pub.listVersions(psite.id))[0].label === "Scheduled publish");
+  await c.sites.deleteOne({ _id: psite.id });
+  await c.siteVersions.deleteMany({ siteId: psite.id });
+  await c.scheduledPublishes.deleteMany({ siteId: psite.id });
+  await c.creators.deleteOne({ _id: pubOwner });
+
   // Clean up.
   await c.sites.deleteOne({ _id: winner._id });
   await c.memberships.deleteMany({ siteId: winner._id });

@@ -4,4 +4,5 @@ export * from "./courses";
 export * from "./enrollments";
 export * from "./progress";
 export * from "./students";
+export * from "./public";
 export { listAnnouncements } from "@/server/announce";

@@ -1,5 +1,5 @@
 import type { Db } from "mongodb";
-import type { Announcement, AuditEntry, Course, Creator, Enrollment, Invite, Learner, Membership, Progress, Site, StoredFile } from "@/lib/types";
+import type { Announcement, AuditEntry, Course, Creator, Enrollment, Invite, Lead, Learner, MediaItem, Membership, Progress, SavedSection, ScheduledPublish, Site, SiteVersion, StoredFile } from "@/lib/types";
 
 // Collection names and document shapes. The app's types (lib/types.ts) use `id`; documents store it as
 // `_id`, so lookups by id use the primary index. `fromDoc`/`toDoc` convert at the edge of the data layer.
@@ -43,6 +43,11 @@ export const COLLECTIONS = {
   progress: "progress",
   files: "files",
   announcements: "announcements",
+  media: "media",
+  savedSections: "saved_sections",
+  leads: "leads",
+  siteVersions: "site_versions",
+  scheduledPublishes: "scheduled_publishes",
   migrations: "_migrations",
   locks: "_locks",
 } as const;
@@ -64,6 +69,11 @@ export function collectionsOf(db: Db) {
     progress: db.collection<ProgressDoc>(COLLECTIONS.progress),
     files: db.collection<Doc<StoredFile>>(COLLECTIONS.files),
     announcements: db.collection<Doc<Announcement>>(COLLECTIONS.announcements),
+    media: db.collection<Doc<MediaItem>>(COLLECTIONS.media),
+    savedSections: db.collection<Doc<SavedSection>>(COLLECTIONS.savedSections),
+    leads: db.collection<Doc<Lead>>(COLLECTIONS.leads),
+    siteVersions: db.collection<Doc<SiteVersion>>(COLLECTIONS.siteVersions),
+    scheduledPublishes: db.collection<Doc<ScheduledPublish>>(COLLECTIONS.scheduledPublishes),
     migrations: db.collection<MigrationDoc>(COLLECTIONS.migrations),
     locks: db.collection<LockDoc>(COLLECTIONS.locks),
   };

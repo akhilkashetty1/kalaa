@@ -18,9 +18,12 @@
     "db:new": "tsx --tsconfig tsconfig.json scripts/db.ts new",
     "db:import-json": "tsx --tsconfig tsconfig.json scripts/db.ts import-json",
     "db:local": "bash scripts/local-mongo.sh",
-    "db:check": "KALAA_SCRIPT=1 NODE_OPTIONS=--conditions=react-server tsx --tsconfig tsconfig.json scripts/check-data-layer.ts"
+    "db:check": "KALAA_SCRIPT=1 NODE_OPTIONS=--conditions=react-server tsx --tsconfig tsconfig.json scripts/check-data-layer.ts",
+    "check:sections": "tsx --tsconfig tsconfig.json scripts/check-sections.ts",
+    "check:ai": "KALAA_SCRIPT=1 NODE_OPTIONS=--conditions=react-server tsx --tsconfig tsconfig.json scripts/check-ai.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
     "@dnd-kit/core": "6.3.1",
     "@dnd-kit/sortable": "10.0.0",
     "@dnd-kit/utilities": "3.2.2",

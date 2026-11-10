@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { Lesson, LessonFile } from "@/lib/types";
 import { db } from "@/server/db";
+import { UserError } from "@/server/errors";
 import { blobStore, fileKey } from "@/server/storage";
 
 // Lesson attachments. MongoDB keeps each file's record; the bytes live in a BlobStore (server/storage).
@@ -20,7 +21,7 @@ export const SITE_QUOTA_BYTES = 500 * 1024 * 1024;
 const ORPHAN_AFTER_MS = 24 * 60 * 60 * 1000;
 const SNIFF_BYTES = 4096;
 
-export class UploadError extends Error {}
+export class UploadError extends UserError {}
 
 const startsWith = (b: Buffer, sig: number[], at = 0) => sig.every((v, i) => b[at + i] === v);
 const isText = (b: Buffer) => !b.subarray(0, 4096).includes(0);

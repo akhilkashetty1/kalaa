@@ -244,3 +244,29 @@
 .lp-files b { font-weight: 600; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lp-files small { color: var(--b-muted); font-size: 12.5px; }
 .lp-files em { font-style: normal; color: var(--b-accent); font-weight: 600; font-size: 13px; }
+
+/* logo, announcement bar, footer columns */
+.sf-logo { height: 36px; width: auto; max-width: 200px; object-fit: contain; display: block; flex: none; }
+.sf-announce { background: var(--b-accent); color: var(--b-on); text-align: center; font-size: 13px; font-weight: 600; padding: 9px 18px; }
+.sf-announce a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.foot-top { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 32px; align-items: start; }
+.foot-id { display: grid; gap: 12px; justify-items: start; }
+.foot-id p { margin: 0; max-width: 38ch; color: var(--b-muted); font-size: 14px; line-height: 1.55; }
+.foot-top ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font-size: 14px; }
+.foot-top ul a { color: var(--b-muted); }
+.foot-top ul a:hover { color: var(--b-ink); }
+.foot-row a { text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 720px) { .foot-top { grid-template-columns: 1fr 1fr; } .foot-id { grid-column: 1 / -1; } }
+
+/* pop-up */
+/* !important: the theme root styles every direct child as position: relative, which must not win here */
+.sf-popup-back { position: fixed !important; inset: 0; z-index: 80 !important; display: grid; place-items: center; padding: 20px; background: color-mix(in oklab, #000 62%, transparent); animation: sf-pop-in .3s ease both; }
+.sf-popup-back[data-preview="true"] { position: absolute !important; }
+.sf-popup { position: relative; width: min(440px, 100%); display: grid; gap: 14px; justify-items: start; padding: clamp(24px, 5cqi, 36px); border-radius: calc(var(--b-rad) * 1.2); background: var(--b-surface); color: var(--b-ink); box-shadow: 0 30px 80px -20px #000, inset 0 0 0 1px color-mix(in oklab, var(--b-ink) 24%, transparent); animation: sf-pop-up .35s cubic-bezier(.22,.7,.1,1) both; }
+.sf-popup h2 { margin: 0; padding-right: 28px; font-family: var(--b-display); font-weight: var(--b-dw); letter-spacing: var(--b-ds); font-size: clamp(24px, 4cqi, 32px); line-height: 1.1; }
+.sf-popup p { margin: 0; color: var(--b-muted); font-size: 15.5px; line-height: 1.55; }
+.sf-popup-x { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border: 0; border-radius: 50%; background: color-mix(in oklab, var(--b-ink) 10%, transparent); color: var(--b-ink); cursor: pointer; font-size: 14px; }
+.sf-popup-x:hover { background: color-mix(in oklab, var(--b-ink) 18%, transparent); }
+@keyframes sf-pop-in { from { opacity: 0; } }
+@keyframes sf-pop-up { from { opacity: 0; transform: translateY(16px) scale(.97); } }
+@media (prefers-reduced-motion: reduce) { .sf-popup-back, .sf-popup { animation: none; } }

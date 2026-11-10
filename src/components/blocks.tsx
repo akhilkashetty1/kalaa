@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { fieldFor, getPath } from "@/lib/blocks";
+import { customOf, sectionClasses } from "@/lib/custom";
 import { inr, t as tr } from "@/lib/i18n";
 import { mixHex, paletteOf } from "@/lib/theme";
-import type { Block, Course } from "@/lib/types";
+import type { Block, PublicCourse } from "@/lib/types";
+import { CustomBg, CustomSection } from "./custom-block";
 import { Editable } from "./editable";
 import { CountUp, Magnetic, Reveal, Rich, ScrollVars, ScrollWords, Spot, Tilt, Words, useMotion } from "./motion";
 import { ShaderCanvas } from "./shaders";
@@ -71,7 +73,7 @@ const coverBg = (i: number) =>
     "radial-gradient(70% 90% at 80% 20%, var(--b-accent2), transparent 60%), linear-gradient(200deg, var(--b-accent), var(--b-surface) 70%)",
   ][i % 4];
 
-type CardCourse = Pick<Course, "id" | "slug" | "title" | "summary" | "priceInr" | "mrpInr" | "tag" | "lessons">;
+type CardCourse = PublicCourse;
 const SAMPLE_COURSES: CardCourse[] = ["Foundations", "Core concepts", "Problem lab", "Mock tests", "Masterclass"].map((title, i) => ({ id: `s${i}`, slug: "", title, summary: "Your course appears here once you create and publish it.", priceInr: 1999 + i * 500, tag: undefined, lessons: [] }));
 
 function CourseCardX({ course, i }: { course: CardCourse; i: number }) {
@@ -98,7 +100,7 @@ function CourseCardX({ course, i }: { course: CardCourse; i: number }) {
 }
 
 /** Cards on a curved path in 3D. Drag to spin; it drifts slowly when idle. */
-function CourseArc({ courses }: { courses: Course[] }) {
+function CourseArc({ courses }: { courses: PublicCourse[] }) {
   const { theme, editor } = useSite();
   const motion = useMotion();
   const root = useRef<HTMLDivElement>(null);
@@ -513,9 +515,23 @@ function Cta({ b }: { b: Block }) {
   );
 }
 
+/** Stands in for the real course details in the editor. On the live site the course page renders the real ones between the template's sections. */
+function CourseCore() {
+  const { course, courses, editor } = useSite();
+  if (!editor) return null;
+  const c = course ?? courses[0];
+  return (
+    <div className="cc-ph">
+      <small className="eyebrow">Course details</small>
+      <h3>{c?.title ?? "Your course title"}</h3>
+      <p>{c ? `${c.lessons.length} lessons · ₹${c.priceInr.toLocaleString("en-IN")}` : "Lessons, price and the reserve form"} appear here on every course page. This block stays in place; add your own sections above or below it.</p>
+    </div>
+  );
+}
+
 const REGISTRY: Record<string, (p: { b: Block }) => ReactNode> = {
   hero: Hero, marquee: Marquee, stats: Stats, statement: Statement, courses: Courses, features: Features,
-  steps: Steps, live: Live, quotes: Quotes, about: About, faq: Faq, cta: Cta,
+  steps: Steps, live: Live, quotes: Quotes, about: About, faq: Faq, cta: Cta, custom: CustomSection, coursecore: CourseCore,
 };
 
 const ANCHORS: Record<string, string> = { courses: "courses", live: "live", quotes: "stories", about: "about", faq: "faq" };
@@ -526,8 +542,14 @@ export function BlockView({ block, index, anchor }: { block: Block; index: numbe
   const Inner = REGISTRY[block.type];
   if (!Inner) return null;
   if (block.hidden && !editor) return null;
-  const className = `blk b-${block.type}${block.hidden ? " is-hidden" : ""}`;
-  const body = <div className="blk-in"><Inner b={block} /></div>;
+  const custom = block.type === "custom";
+  const className = `blk b-${block.type}${block.hidden ? " is-hidden" : ""}${custom ? ` ${sectionClasses(customOf(block.props))}` : ""}`;
+  const body = (
+    <>
+      {custom && <CustomBg b={block} />}
+      <div className="blk-in"><Inner b={block} /></div>
+    </>
+  );
   if (editor) {
     const Frame = editor.Frame;
     return <Frame block={block} index={index} className={className} anchor={anchor}>{body}</Frame>;

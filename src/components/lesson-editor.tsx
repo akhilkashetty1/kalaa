@@ -3,10 +3,10 @@
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { upload as uploadToBlob } from "@vercel/blob/client";
 import { useRef, useState } from "react";
 import { MAX_FILES_PER_LESSON, MAX_LESSONS, formatBytes, parseLessons } from "@/lib/lessons";
 import type { Lesson, LessonFile } from "@/lib/types";
+import { uploadViaApi } from "./upload-client";
 
 // Row-by-row lesson editor. Rows are plain state; what the server receives is one hidden field holding
 // the rows as JSON. Attachments are uploaded as soon as they are chosen and only their ids are submitted,
@@ -16,40 +16,6 @@ type Row = { uid: string; title: string; minutes: string; free: boolean; url: st
 
 const ACCEPT = ".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.csv,.zip,.png,.jpg,.jpeg,.webp";
 const MAX_MB = 15;
-
-type UploadReply = Partial<LessonFile> & { error?: string };
-
-async function postJson(url: string, body: unknown): Promise<{ ok: boolean; body: Record<string, unknown> }> {
-  const res = await fetch(url, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" }, credentials: "same-origin" });
-  return { ok: res.ok, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
-}
-
-/**
- * Uploads one attachment. The server first checks the name, size and quota and says where the bytes go:
- * through our own route (local storage) or straight to the private Blob store, after which it checks
- * what arrived and records it.
- */
-async function uploadFile(slug: string, file: File): Promise<UploadReply> {
-  const q = `?site=${encodeURIComponent(slug)}`;
-  const start = await postJson(`/api/studio/upload/start${q}`, { name: file.name, size: file.size });
-  if (!start.ok) return { error: String(start.body.error ?? "The upload failed. Try again.") };
-  if (start.body.mode === "direct" && typeof start.body.key === "string") {
-    await uploadToBlob(start.body.key, file, {
-      access: "private",
-      handleUploadUrl: `/api/studio/upload/blob${q}`,
-      clientPayload: JSON.stringify({ name: file.name, size: file.size }),
-      contentType: "application/octet-stream",
-      multipart: file.size > 5 * 1024 * 1024,
-    });
-    const done = await postJson(`/api/studio/upload/complete${q}`, { key: start.body.key, name: file.name });
-    return done.ok ? (done.body as UploadReply) : { error: String(done.body.error ?? "The upload failed. Try again.") };
-  }
-  const fd = new FormData();
-  fd.append("file", file);
-  const res = await fetch(`/api/studio/upload${q}`, { method: "POST", body: fd, credentials: "same-origin" });
-  const body = (await res.json().catch(() => ({}))) as UploadReply;
-  return res.ok ? body : { error: body.error ?? "The upload failed. Try again." };
-}
 
 const blank = (uid: string): Row => ({ uid, title: "", minutes: "", free: false, url: "", files: [], uploading: 0, error: "" });
 const fromLesson = (l: Lesson, uid: string): Row => ({ uid, title: l.title, minutes: String(l.minutes), free: l.free, url: l.url ?? "", files: l.files ?? [], uploading: 0, error: "" });
@@ -120,9 +86,12 @@ export function LessonEditor({ slug, initial }: { slug: string; initial: Lesson[
       if (file.size > MAX_MB * 1024 * 1024) { patch(uid, { error: `“${file.name}” is bigger than ${MAX_MB} MB.` }); continue; }
       bump(uid, 1);
       try {
-        const body = await uploadFile(slug, file);
-        if (!body.id) patch(uid, { error: body.error ?? "The upload failed. Try again." });
-        else setRows((rs) => rs.map((r) => (r.uid === uid ? { ...r, files: [...r.files, body as LessonFile] } : r)));
+        const res = await uploadViaApi<LessonFile>("/api/studio/upload", slug, file);
+        if (!res.item) patch(uid, { error: res.error });
+        else {
+          const item = res.item;
+          setRows((rs) => rs.map((r) => (r.uid === uid ? { ...r, files: [...r.files, item] } : r)));
+        }
       } catch {
         patch(uid, { error: "The upload failed. Check your connection and try again." });
       } finally {
