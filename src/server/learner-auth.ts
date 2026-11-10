@@ -52,11 +52,30 @@ export async function verifyLearnerCode(site: Site, email: string, code: string)
   return { ok: true, learner: fromDoc<Learner>(doc!) };
 }
 
-export async function startLearnerSession(site: Site, learnerId: string) {
+/** Creates a session and returns its secret token. Only a hash is stored. Used by the cookie flow and by the mobile app API. */
+export async function createLearnerSession(site: Site, learnerId: string) {
   const token = randomBytes(32).toString("base64url");
   const now = Date.now();
   // Expired sessions are removed by a TTL index.
   await (await db()).learnerSessions.insertOne({ _id: sha256(token), learnerId, siteId: site.id, createdAt: new Date(now), expiresAt: new Date(now + SESSION_TTL_MS) });
+  return token;
+}
+
+/** The learner a token belongs to on this site, or null. A token issued by another site never matches. */
+export async function learnerByToken(siteId: string, token: string): Promise<Learner | null> {
+  if (!token) return null;
+  const c = await db();
+  const session = await c.learnerSessions.findOne({ _id: sha256(token), siteId, expiresAt: { $gt: new Date() } });
+  const learner = session && (await c.learners.findOne({ _id: session.learnerId, siteId }));
+  return learner ? fromDoc<Learner>(learner) : null;
+}
+
+export async function revokeLearnerToken(token: string) {
+  if (token) await (await db()).learnerSessions.deleteOne({ _id: sha256(token) });
+}
+
+export async function startLearnerSession(site: Site, learnerId: string) {
+  const token = await createLearnerSession(site, learnerId);
   (await cookies()).set(LEARNER_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -75,12 +94,7 @@ export async function endLearnerSession() {
 
 /** The signed-in learner for this storefront, or null. A session issued by another site never matches. */
 export const currentLearner = cache(async (siteId: string): Promise<Learner | null> => {
-  const token = (await cookies()).get(LEARNER_COOKIE)?.value;
-  if (!token) return null;
-  const c = await db();
-  const session = await c.learnerSessions.findOne({ _id: sha256(token), siteId, expiresAt: { $gt: new Date() } });
-  const learner = session && (await c.learners.findOne({ _id: session.learnerId, siteId }));
-  return learner ? fromDoc<Learner>(learner) : null;
+  return learnerByToken(siteId, (await cookies()).get(LEARNER_COOKIE)?.value ?? "");
 });
 
 /** Only allows returning to the library, a course page or a lesson on the same storefront. */

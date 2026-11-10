@@ -23,7 +23,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     metadataBase: new URL(siteOrigin(site)),
     title: { default: `${site.name} · ${headline}`, template: `%s · ${site.name}` },
     description: site.bio,
-    ...(brand.favicon ? { icons: { icon: brand.favicon, apple: brand.favicon } } : {}),
+    manifest: "/app-manifest",
+    appleWebApp: { capable: true, title: site.name.slice(0, 20) },
+    icons: { icon: brand.favicon || "/app-icon/192", apple: brand.favicon || "/app-icon/192" },
     openGraph: { title: site.name, description: headline, siteName: site.name, type: "website", ...(brand.share ? { images: [{ url: brand.share }] } : {}) },
     twitter: { card: brand.share ? "summary_large_image" : "summary", ...(brand.share ? { images: [brand.share] } : {}) },
   };

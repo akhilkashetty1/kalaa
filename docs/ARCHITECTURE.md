@@ -50,3 +50,17 @@ Learner downloads: `/sites/<host>/files/<id>` -> `canDownload()` -> stream from 
 - Need two writes to succeed together? `withTransaction`, `lockSite(tx, siteId)`, pass `session` to every call, and send email after it returns.
 - Changing the shape of stored data? Write a migration (`npm run db:new <name>`). It must run on the old and new code, because the old deployment keeps serving while the new one builds. Add first, remove in a later release.
 - A new unique rule belongs in an index, not only in code.
+
+## Mobile app API (`/api/app/v1`)
+
+JSON API for the mobile apps and the installable web app. The tenant is the request's `Host` header, so an app talks to the teacher's own address like a browser does. A learner signs in with the same emailed code, then sends `Authorization: Bearer <token>`; the token is a `learner_sessions` row scoped to one site (only its hash is stored), so a token from one school never works on another.
+
+| Route | Purpose |
+|---|---|
+| `GET site` | Name, look, brand kit, announcement, public courses. Changing these in Studio changes the app with no store release. |
+| `POST auth/code`, `POST auth/verify`, `POST auth/logout` | Emailed code, exchange for a token, revoke. Rate limited per IP and per site. |
+| `GET me` | Library with progress, and courses awaiting payment. |
+| `GET courses/:slug` | Lessons. Links and files appear only for lessons the learner may open. |
+| `POST courses/:slug/progress` | `{ lesson, done? }`. |
+
+Lesson attachments: `GET /files/:id` also accepts the bearer token. The web app manifest is `/app-manifest` and its icons are `/app-icon/192|512`.
