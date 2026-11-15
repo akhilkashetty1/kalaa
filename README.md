@@ -74,9 +74,32 @@ Any other email creates a new creator account.
 
 ## Configuration
 
-Every variable is documented in [.env.example](.env.example). Required: `MONGODB_URI`, `MONGODB_DB`, `NEXT_PUBLIC_ROOT_DOMAIN`. Production also needs email (`RESEND_API_KEY`, `MAIL_FROM`) and a Blob store.
+Every variable is documented in [.env.example](.env.example). Required: `MONGODB_URI`, `MONGODB_DB`, `NEXT_PUBLIC_ROOT_DOMAIN`. Production also needs email (`RESEND_API_KEY`, `MAIL_FROM`) and file storage (`STORAGE_DIR` on your own server, a Blob store on Vercel).
+
+## Deploying to your own server
+
+This is the production plan: one server behind Cloudflare, the same setup as Datsnip. The full plan, with decisions,
+phases and costs, is [docs/DEPLOYMENT-PLAN.md](docs/DEPLOYMENT-PLAN.md). The server itself is configured by the private
+`kalaa-infra` repo (Ansible + OpenTofu); nothing in this repo provisions servers.
+
+What the app needs from that server:
+
+| Need | How |
+| --- | --- |
+| Node 22, `npm ci`, `npm run db:migrate`, `npm run build`, `npm start` | `NEXT_PUBLIC_ROOT_DOMAIN` must be set **at build time** too: it is inlined into the middleware |
+| MongoDB 7+ as a replica set (transactions need one) | A single-node replica set on the same machine, bound to `127.0.0.1`, with auth |
+| Files | `STORAGE_DRIVER=local` and `STORAGE_DIR` outside the app's checkout (e.g. `/var/lib/kalaa/files`), backed up with the database |
+| Real client IPs for rate limits | `CLIENT_IP_HEADER=cf-connecting-ip`, only when the firewall admits nothing but Cloudflare |
+| Scheduled publishing | Call `GET /api/cron/publish` with `Authorization: Bearer $CRON_SECRET` every 5 minutes (a systemd timer) |
+| Hosts | Cloudflare DNS: apex, `www` and wildcard `*` for storefronts, plus `edge` as `CNAME_TARGET`. Creators' own domains go through Cloudflare for SaaS (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ZONE_ID`) |
+| Uptime | `/api/health` |
+
+Before merging to `main`, run what CI runs: `npm run typecheck && npm run check:sections && npm run build`.
 
 ## Deploying to Vercel
+
+The alternative: managed hosting, more expensive once backups and crons are needed.
+
 
 One-time setup:
 

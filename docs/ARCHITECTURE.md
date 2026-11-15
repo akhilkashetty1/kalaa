@@ -1,7 +1,12 @@
 # Kalaa architecture
 
-One Next.js app (App Router) on Vercel, MongoDB Atlas for data, a private Vercel Blob store for files.
-No other servers: everything is request-driven, so it scales to zero and deploys with `git push`.
+One Next.js app (App Router) and MongoDB. It runs in either of two ways, with the same code:
+
+- **Own server** (the production plan, see [DEPLOYMENT-PLAN.md](DEPLOYMENT-PLAN.md)): Cloudflare -> Caddy -> `next start`,
+  MongoDB as a single-node replica set on the same machine, files on its disk under `STORAGE_DIR`, scheduled publishing
+  from a systemd timer. Infrastructure lives in the private `kalaa-infra` repo.
+- **Vercel**: MongoDB Atlas, a private Vercel Blob store for files, Vercel Cron. Request-driven, so it scales to zero
+  and deploys with `git push` (README -> Deploying to Vercel).
 
 ## Layers
 
@@ -13,7 +18,7 @@ src/
   server/       everything with side effects. Every file starts with `import "server-only"`.
     db/           MongoDB: client, collections, transactions, migrations, seed
     data/         queries and writes per area (sites, courses, enrollments, progress, students)
-    storage/      BlobStore: local disk (dev) | private Vercel Blob (prod)
+    storage/      BlobStore: local disk (dev, own server) | private Vercel Blob (Vercel)
     auth.ts, learner-auth.ts, otp.ts, team.ts, files.ts, announce.ts, domains.ts, mail.ts ...
   middleware.ts tenant routing (host -> /sites/<host>)
 scripts/        db.ts (migrate, seed, import...), local-mongo.sh, check-data-layer.ts
@@ -34,15 +39,17 @@ Dependency direction: `app, components -> server -> lib`. `lib` imports nothing 
 | **Atomic single-document updates** for counters | OTP attempts, rate limits and lesson progress use `$inc`, `$addToSet` and upserts, so parallel requests can't overwrite each other. |
 | **TTL indexes** | Sessions, sign-in codes and rate-limit windows expire by themselves. Expiry is also checked in queries because TTL runs about once a minute. |
 | **Rate limits in MongoDB** | Shared by every serverless instance. No Redis to run. |
-| **Private Vercel Blob for files**, behind our download routes | Lesson files are paid content, so the store has no public URLs. Uploads go browser -> Blob directly (functions accept at most 4.5 MB), then we verify the bytes and record them. |
+| **Files behind our download routes**: disk on an own server, private Vercel Blob on Vercel | Lesson files are paid content, so the store has no public URLs. On Vercel, uploads go browser -> Blob directly (functions accept at most 4.5 MB), then we verify the bytes and record them. On an own server they go through our upload route. |
+| **Client IP from a configured header** (`src/server/client-ip.ts`) | Per-IP limits need the visitor's address, and which header is trustworthy depends on the proxy in front. Behind Cloudflare, `CLIENT_IP_HEADER=cf-connecting-ip`; otherwise the first `X-Forwarded-For` entry. |
 | **Multi-tenancy by host** | Middleware rewrites any non-platform host to `/sites/<host>`. Tenant data is always filtered by `siteId`. |
 | **Two environments, two databases** | `kalaa` (production), `kalaa_preview`, `kalaa_dev`. Seeding refuses any name not ending `_dev`, `_test` or `_preview`. |
 
 ## Request flow
 
-Browser -> Vercel edge -> `middleware.ts` (host routing) -> page or action -> `server/data/*` -> MongoDB.
-Files: browser -> `/api/studio/upload/start` (checks) -> Blob (direct) -> `/api/studio/upload/complete` (verifies, records).
-Learner downloads: `/sites/<host>/files/<id>` -> `canDownload()` -> stream from Blob with `no-store`.
+Browser -> Cloudflare -> Caddy (own server) or Vercel edge -> `middleware.ts` (host routing) -> page or action -> `server/data/*` -> MongoDB.
+Files, own server: browser -> `/api/studio/upload/start` (checks) -> `/api/studio/upload` (verifies, writes to disk, records).
+Files, Vercel: browser -> `/api/studio/upload/start` (checks) -> Blob (direct) -> `/api/studio/upload/complete` (verifies, records).
+Learner downloads: `/sites/<host>/files/<id>` -> `canDownload()` -> stream from the store with `no-store`.
 
 ## Rules for new code
 
