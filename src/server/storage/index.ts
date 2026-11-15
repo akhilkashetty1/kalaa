@@ -4,8 +4,8 @@ import { vercelBlobStore } from "./vercel-blob";
 
 // Where uploaded file bytes live. MongoDB keeps the record (name, size, owner); a BlobStore keeps the bytes.
 //
-// - "local": files under .data/files on this machine. Development only: Vercel's filesystem is read-only
-//   and every function instance has its own.
+// - "local": files on this machine's disk, under STORAGE_DIR (default .data/files). For development and for
+//   running on your own server. Not on Vercel: its filesystem is read-only and every function instance has its own.
 // - "vercel-blob": a private Vercel Blob store. Browsers upload straight to it (Vercel functions accept at
 //   most 4.5 MB per request), and downloads stream through our routes after the access check.
 //

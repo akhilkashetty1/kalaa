@@ -1,7 +1,7 @@
 "use server";
 
-import { headers } from "next/headers";
 import { createHash } from "node:crypto";
+import { clientIp } from "@/server/client-ip";
 import { LeadError, submitLead as store, type LeadInput } from "@/server/leads";
 import { siteFromHost } from "@/server/tenant";
 
@@ -12,9 +12,7 @@ export type LeadResult = { ok: true; message: string } | { ok: false; error: str
 
 export async function submitLead(input: LeadInput): Promise<LeadResult> {
   try {
-    const h = await headers();
-    const forwarded = h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
-    const ip = createHash("sha256").update(forwarded).digest("hex").slice(0, 24); // never stored in the clear
+    const ip = createHash("sha256").update(await clientIp()).digest("hex").slice(0, 24); // never stored in the clear
     const site = await siteFromHost();
     return { ok: true, ...(await store(site, input, ip)) };
   } catch (err) {

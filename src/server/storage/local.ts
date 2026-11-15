@@ -4,10 +4,14 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import type { BlobStore } from ".";
 
-// Development storage on local disk. Keys map to .data/files/<siteId>/<fileId>, the layout the app has
-// always used, so files uploaded before the MongoDB move keep working.
+// File storage on this machine's disk. Keys map to <root>/<siteId>/<fileId>, the layout the app has always
+// used, so files uploaded before the MongoDB move keep working.
+//
+// The root is .data/files in development. On an own server set STORAGE_DIR to a directory outside the app's
+// checkout (e.g. /var/lib/kalaa/files): each deploy builds a fresh copy of the app, and the files must
+// survive that and be backed up. Not for Vercel, whose filesystem is read-only and per instance.
 
-const ROOT = path.join(process.cwd(), ".data", "files");
+const ROOT = path.resolve(process.env.STORAGE_DIR || path.join(process.cwd(), ".data", "files"));
 
 function pathOf(key: string) {
   const [, siteId, fileId] = key.split("/");

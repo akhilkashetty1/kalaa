@@ -1,5 +1,6 @@
 import "server-only";
 import { headers } from "next/headers";
+import { clientIp } from "@/server/client-ip";
 import { getSiteByHost } from "@/server/data";
 import { learnerByToken } from "@/server/learner-auth";
 import { takeToken } from "@/server/rate-limit";
@@ -23,11 +24,9 @@ export async function appLearner(site: Site, req: Request): Promise<Learner | nu
   return learnerByToken(site.id, bearer(req));
 }
 
-/** Per-client abuse limit for the unauthenticated endpoints. Keyed by IP as the platform reports it. */
+/** Per-client abuse limit for the unauthenticated endpoints. Keyed by IP (see client-ip.ts). */
 export async function limited(name: string, limit: number, windowMs = 60 * 60 * 1000) {
-  const h = await headers();
-  const ip = (h.get("x-forwarded-for") ?? "").split(",")[0].trim() || "unknown";
-  return !(await takeToken(`app:${name}`, ip, limit, windowMs));
+  return !(await takeToken(`app:${name}`, await clientIp(), limit, windowMs));
 }
 
 export async function readJson(req: Request): Promise<Record<string, unknown>> {
